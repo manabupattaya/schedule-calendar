@@ -119,8 +119,8 @@ body{font-family:'Google Sans',Roboto,sans-serif;background:var(--bg);color:var(
 <div id="app"></div>
 
 <script>
-const GAS_URL = 'https://script.google.com/macros/s/AKfycbzrv9cjAOZvz4DX5EUlPnIIZu8gqfyRN9xGwHxMHXkGXwZkcsKms1hypWUq1vpxpvt_dA/exec';
-const ROOM_KEY_DEFAULT = 'U4a1d653e300ea1977507546343c77463';
+const GAS_URL = 'https://script.google.com/macros/s/AKfycbzjDEn_jmn6kiW7mkRzDTWg3ONF4KTb5uvAx9-AAA9dOFuY8ipx8mMYAlP9sbiD4IzMhA/exec';
+const ROOM_KEY_DEFAULT = 'C4cd03178e66dc4e17ae54eb5be1e7c73';
 
 const COLORS = [
   {bg:'#e8f0fe',text:'#185abc',border:'#4285f4'},
@@ -133,6 +133,21 @@ const COLORS = [
 
 let events=[], loading=false, view='month', cur=new Date();
 let roomKey=localStorage.getItem('roomKey')||ROOM_KEY_DEFAULT;
+let roomKeyHistory=loadRoomKeyHistory();
+
+function loadRoomKeyHistory(){
+  try{
+    const raw=localStorage.getItem('roomKeyHistory');
+    return raw?JSON.parse(raw):[];
+  }catch(e){return [];}
+}
+function saveRoomKeyHistory(key){
+  if(!key)return;
+  roomKeyHistory=roomKeyHistory.filter(k=>k!==key);
+  roomKeyHistory.unshift(key);
+  roomKeyHistory=roomKeyHistory.slice(0,10); // 最大10件
+  localStorage.setItem('roomKeyHistory', JSON.stringify(roomKeyHistory));
+}
 let showModal=false, editEvent=null, newDate='';
 let popup=null, popupPos={x:0,y:0};
 // 週表示のページ（スマホ用：3日単位）
@@ -209,7 +224,10 @@ function buildApp(){
     <div class="tb-row2">
       <div class="roomkey-wrap">
         <i class="ti ti-users" style="font-size:13px"></i>
-        <input id="inp-roomkey" value="${roomKey}" placeholder="roomKey">
+        <input id="inp-roomkey" list="roomkey-history" value="${roomKey}" placeholder="roomKey（履歴から選択も可）">
+        <datalist id="roomkey-history">
+          ${roomKeyHistory.map(k=>`<option value="${esc(k)}"></option>`).join('')}
+        </datalist>
         <button class="btn" id="btn-load" style="font-size:12px;padding:5px 10px">読込</button>
       </div>
       <button class="btn btn-primary" id="btn-add" style="margin-left:auto;padding:8px 14px"><i class="ti ti-plus"></i> 追加</button>
@@ -341,6 +359,7 @@ function buildModal(){
       <div class="form-row"><label>開始</label><input id="f-start" type="time" value="${e.start||'09:00'}"></div>
       <div class="form-row"><label>終了</label><input id="f-end" type="time" value="${e.end||'10:00'}"></div>
     </div>
+    <div class="form-row"><label>会場</label><input id="f-venue" value="${esc(e.venue||'')}" placeholder="会場・場所（任意）"></div>
     <div class="form-row"><label>メモ</label><textarea id="f-memo">${esc(e.memo||'')}</textarea></div>
     <div class="form-row"><label>カラー</label>
       <div class="color-row">${COLORS.map((c,i)=>`<div class="color-dot" style="background:${c.border};outline:${e.color===i?'3px solid #202124':'2px solid transparent'};outline-offset:2px" data-ci="${i}"></div>`).join('')}</div>
@@ -368,6 +387,7 @@ function buildPopup(mobile){
   <div class="popup-title">${esc(e.title)}</div>
   <div class="popup-meta"><i class="ti ti-calendar" style="font-size:15px"></i> ${fmtJP(e.date)}</div>
   ${!e.allDay&&e.start?`<div class="popup-meta"><i class="ti ti-clock" style="font-size:15px"></i> ${e.start}${e.end?' 〜 '+e.end:''}</div>`:`<div class="popup-meta">終日</div>`}
+  ${e.venue?`<div class="popup-meta"><i class="ti ti-map-pin" style="font-size:15px"></i> ${esc(e.venue)}</div>`:''}
   ${e.memo?`<div class="popup-meta"><i class="ti ti-notes" style="font-size:15px"></i> ${esc(e.memo)}</div>`:''}
   <div class="popup-btns">
     <button class="btn-sm" id="popup-edit"><i class="ti ti-edit"></i> 編集</button>
@@ -396,7 +416,7 @@ function attachListeners(){
   $('btn-add')?.addEventListener('click',()=>{editEvent=null;newDate='';showModal=true;popup=null;render();});
   $('btn-load')?.addEventListener('click',()=>{
     const v=$('inp-roomkey').value.trim();
-    if(v){roomKey=v;localStorage.setItem('roomKey',v);loadEvents().then(render);}
+    if(v){roomKey=v;localStorage.setItem('roomKey',v);saveRoomKeyHistory(v);loadEvents().then(render);}
   });
   $('wp-prev')?.addEventListener('click',()=>{weekPage--;render();});
   $('wp-next')?.addEventListener('click',()=>{weekPage++;render();});
@@ -434,7 +454,7 @@ function attachListeners(){
     const allDay=$('f-allday').checked;
     const selDot=document.querySelector('.color-dot[style*="3px solid"]');
     const color=selDot?parseInt(selDot.dataset.ci):(editEvent?editEvent.color:0);
-    const payload={id:editEvent?.id,title,date:$('f-date').value,start:allDay?'':$('f-start').value,end:allDay?'':$('f-end').value,memo:$('f-memo').value,allDay,color};
+    const payload={id:editEvent?.id,title,date:$('f-date').value,start:allDay?'':$('f-start').value,end:allDay?'':$('f-end').value,venue:$('f-venue').value,memo:$('f-memo').value,allDay,color};
     showModal=false;loading=true;render();
     try{
       if(editEvent){await apiUpdate(payload);toast('更新しました');}
@@ -477,7 +497,9 @@ function toast(msg){
   setTimeout(()=>el.remove(),2500);
 }
 
+if(roomKey && roomKey !== ROOM_KEY_DEFAULT) saveRoomKeyHistory(roomKey);
 loadEvents().then(render);
 </script>
 </body>
 </html>
+
